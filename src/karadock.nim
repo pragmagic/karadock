@@ -1,4 +1,4 @@
-import sequtils, math
+import sequtils, math, options
 import vdom, vstyles, components, karax, karaxdsl, jdict, jstrutils
 
 type
@@ -43,8 +43,7 @@ type
     panelNameStyle*: VStyle
     panelNameDropPlaceHolderStyle: VStyle
 
-    draggingPanel*: PanelPath #NOTE: Should be replaced by https://developer.mozilla.org/en-US/docs/Web/API/DataTransfer but it's not supported by Karax because not in HTML5
-    isDragging: bool
+    draggingPanel*: Option[PanelPath] #NOTE: Should be replaced by https://developer.mozilla.org/en-US/docs/Web/API/DataTransfer but it's not supported by Karax because not in HTML5
 
     onupdate*: proc (config: Config) not nil
     columns*: seq[Column]
@@ -63,7 +62,7 @@ let initialConfig* = Config(
   panelNameStyle: VStyle(),
   panelNameDropPlaceHolderStyle: VStyle(),
 
-  isDragging: false,
+  draggingPanel: none(PanelPath),
 
   onupdate: proc(config: Config) = discard,
   columns: @[]
@@ -86,6 +85,19 @@ proc getPanel*(config: var Config; path: PanelPath): var Panel =
 
 proc getPanel*(config: Config; path: PanelPath): Panel =
   getRow(config=config, path=path.rowPath).panels[path.index]
+
+proc findPanelByName*(config: Config; name: cstring): Option[PanelPath] =
+  for c, column in pairs(config.columns):
+    for r, row in pairs(column.rows):
+      for p, panel in pairs(row.panels):
+        if panel.name == name:
+          return some((
+            rowPath: (
+              columnPath: Natural(c),
+              index: Natural(r)
+            ),
+            index: Natural(p)
+          ))
 
 proc insertColumn*(config: var Config; path: ColumnPath; column: Column) =
   config.columns.insert(@[column], path)
@@ -189,13 +201,12 @@ proc renderRowHeader(config: Config; row: Row; path: RowPath): VNode =
 
       proc onDragStart(ev: Event; n: VNode) =
         var config = config
-        config.draggingPanel = panelPath
-        config.isDragging = true
+        config.draggingPanel = some(panelPath)
         config.onupdate(config)
 
       proc onDragEnd(ev: Event; n: VNode) =
         var config = config
-        config.isDragging = false
+        config.draggingPanel = none(PanelPath)
         config.onupdate(config)
 
       tdiv(style=panelNameStyle, ondragstart=onDragStart, ondragend=onDragEnd):

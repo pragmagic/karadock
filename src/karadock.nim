@@ -49,7 +49,7 @@ type
     onupdate*: proc (config: Config) not nil
     columns*: seq[Column]
 
-let INITIAL_CONFIG* = Config(
+let initialConfig* = Config(
   width: 0,
   height: 0,
 
@@ -228,7 +228,7 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
         index: Natural(rowIndex)
       ))
 
-proc KaraDock*(config: Config = INITIAL_CONFIG): VNode =
+proc karaDock*(config: Config = initialConfig): VNode =
   let style = style(
     (StyleAttr.width, &config.width & "px"),
     (StyleAttr.height, &config.height & "px"),

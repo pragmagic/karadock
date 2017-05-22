@@ -149,7 +149,7 @@ Config(
 
 # config.getPanel, config.insertPanel, config.deletePanel, config.setActivePanel, config.movePanel
 
-KaraDock(config)
+karaDock(config)
 ```
 
 ## TODO

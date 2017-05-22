@@ -34,14 +34,14 @@ type
     height*: int
 
     columnStyle*: VStyle
-    columnDropPlaceHolderStyle: VStyle
+    columnDropPlaceHolderStyle*: VStyle
 
     rowStyle*: VStyle
     rowHeaderStyle*: VStyle
     rowDropPlaceHolderStyle*: VStyle
 
     panelNameStyle*: VStyle
-    panelNameDropPlaceHolderStyle: VStyle
+    panelNameDropPlaceHolderStyle*: VStyle
 
     draggingPanel*: Option[PanelPath] #NOTE: Should be replaced by https://developer.mozilla.org/en-US/docs/Web/API/DataTransfer but it's not supported by Karax because not in HTML5
 

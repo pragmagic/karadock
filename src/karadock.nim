@@ -12,8 +12,12 @@ type
     rowPath: RowPath
     index: Natural
 
+  ColumnStyle* = proc(config: Config; path: ColumnPath): VStyle
+  RowStyle* = proc(config: Config; path: RowPath): VStyle
+  PanelStyle* = proc(config: Config; path: PanelPath): VStyle
+
   Panel* = object
-    name*: cstring
+    name*: cstring not nil
     isWorkingArea*: bool
     forceDisplayName*: bool
     minWidthPx*: int
@@ -21,50 +25,56 @@ type
     body*: VNode
 
   Row* = object
-    panels*: seq[Panel]
+    panels*: seq[Panel] not nil
     activePanel*: Natural
     height*: int #NOTE: Percents
 
   Column* = object
-    rows*: seq[Row]
+    rows*: seq[Row] not nil
     width*: int #NOTE: Will be in percents for any column which has working area panel
 
   Config* = object
     width*: int
     height*: int
 
-    columnStyle*: VStyle
-    columnDropPlaceHolderStyle*: VStyle
+    columnStyle*: ColumnStyle not nil
+    columnDropPlaceholderStyle*: ColumnStyle not nil
 
-    rowStyle*: VStyle
-    rowHeaderStyle*: VStyle
-    rowDropPlaceHolderStyle*: VStyle
+    rowStyle*: RowStyle not nil
+    rowHeaderStyle*: RowStyle not nil
+    rowDropPlaceholderStyle*: RowStyle not nil
 
-    panelNameStyle*: VStyle
-    panelNameDropPlaceHolderStyle*: VStyle
+    panelNameStyle*: PanelStyle not nil
+    panelNameDropPlaceholderStyle*: PanelStyle not nil
 
     draggingPanel*: Option[PanelPath] #NOTE: Should be replaced by https://developer.mozilla.org/en-US/docs/Web/API/DataTransfer but it's not supported by Karax because not in HTML5
 
     onupdate*: proc (config: Config) not nil
-    columns*: seq[Column]
+    columns*: seq[Column] not nil
+
+proc emptyColumnStyle(config: Config; path: ColumnPath): VStyle = VStyle()
+proc emptyRowStyle(config: Config; path: RowPath): VStyle = VStyle()
+proc emptyPanelStyle(config: Config; path: PanelPath): VStyle = VStyle()
+
+proc discardOnUpdate*(config: Config) = discard
 
 let initialConfig* = Config(
   width: 0,
   height: 0,
 
-  columnStyle: VStyle(),
-  columnDropPlaceHolderStyle: VStyle(),
+  columnStyle: emptyColumnStyle,
+  columnDropPlaceholderStyle: emptyColumnStyle,
 
-  rowStyle: VStyle(),
-  rowHeaderStyle: VStyle(),
-  rowDropPlaceHolderStyle: VStyle(),
+  rowStyle: emptyRowStyle,
+  rowHeaderStyle: emptyRowStyle,
+  rowDropPlaceholderStyle: emptyRowStyle,
 
-  panelNameStyle: VStyle(),
-  panelNameDropPlaceHolderStyle: VStyle(),
+  panelNameStyle: emptyPanelStyle,
+  panelNameDropPlaceholderStyle: emptyPanelStyle,
 
   draggingPanel: none(PanelPath),
 
-  onupdate: proc(config: Config) = discard,
+  onupdate: discardOnUpdate,
   columns: @[]
 )
 
@@ -189,9 +199,9 @@ proc getColumnWidthPx(config: Config; column: Column): int =
 proc renderRowHeader(config: Config; row: Row; path: RowPath): VNode =
   let panelNameStyle = style(
     StyleAttr.display, "inline"
-  ).merge(config.panelNameStyle)
+  )
 
-  result = buildHtml(tdiv(style=config.rowHeaderStyle)):
+  result = buildHtml(tdiv(style=config.rowHeaderStyle(config=config, path=path))):
     for panelIndex in countup(0, len(row.panels)):
       let panelPath = (
         rowPath: path,
@@ -209,7 +219,9 @@ proc renderRowHeader(config: Config; row: Row; path: RowPath): VNode =
         config.draggingPanel = none(PanelPath)
         config.onupdate(config)
 
-      tdiv(style=panelNameStyle, ondragstart=onDragStart, ondragend=onDragEnd):
+      let style = panelNameStyle.merge(config.panelNameStyle(config=config, path=panelPath));
+
+      tdiv(style=style, ondragstart=onDragStart, ondragend=onDragEnd):
         text panel.name
 
 proc renderRow(config: Config; path: RowPath): VNode =
@@ -217,7 +229,7 @@ proc renderRow(config: Config; path: RowPath): VNode =
 
   let style = style(
     (StyleAttr.height, &int(round(row.height * config.height / 100)) & "px"),
-  ).merge(config.rowStyle)
+  ).merge(config.rowStyle(config=config, path=path))
 
   result = buildHtml(tdiv(style=style)):
     if len(row.panels) > 1 or row.panels.any(proc (panel: Panel): bool = panel.forceDisplayName):
@@ -228,9 +240,10 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
   let column = getColumn(config=config, path=path)
 
   let style = style(
+    (StyleAttr.display, cstring"inline"),
     (StyleAttr.width, &getColumnWidthPx(config=config, column=column) & "px"),
-    (StyleAttr.position, cstring("relative"))
-  ).merge(config.columnStyle)
+    (StyleAttr.position, cstring"relative")
+  ).merge(config.columnStyle(config=config, path=path))
 
   result = buildHtml(tdiv(style=style)):
     for rowIndex in countup(0, len(column.rows)):

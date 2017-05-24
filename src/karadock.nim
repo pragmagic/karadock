@@ -78,20 +78,11 @@ let initialConfig* = Config(
   columns: @[]
 )
 
-proc getColumn*(config: var Config; path: ColumnPath): var Column =
-  config.columns[path]
-
 proc getColumn*(config: Config; path: ColumnPath): Column =
   config.columns[path]
 
-proc getRow*(config: var Config; path: RowPath): var Row =
-  getColumn(config=config, path=path.columnPath).rows[path.index]
-
 proc getRow*(config: Config; path: RowPath): Row =
   getColumn(config=config, path=path.columnPath).rows[path.index]
-
-proc getPanel*(config: var Config; path: PanelPath): var Panel =
-  getRow(config=config, path=path.rowPath).panels[path.index]
 
 proc getPanel*(config: Config; path: PanelPath): Panel =
   getRow(config=config, path=path.rowPath).panels[path.index]
@@ -116,30 +107,30 @@ proc deleteColumn*(config: var Config; path: ColumnPath) =
   config.columns.delete(path)
 
 proc resizeColumn*(config: var Config; path: ColumnPath; width: int) =
-  getColumn(config=config, path=path).width = width
+  config.columns[path].width = width
 
 proc insertRow*(config: var Config; path: RowPath; row: Row) =
-  getColumn(config=config, path=path.columnPath).rows.insert(@[row], path.index)
+  config.columns[path.columnPath].rows.insert(@[row], path.index)
 
 proc deleteRow*(config: var Config; path: RowPath) =
-  var column = getColumn(config=config, path=path.columnPath)
-  column.rows.delete(path.index)
-  if len(column.rows) == 0:
+  config.columns[path.columnPath].rows.delete(path.index)
+  if len(config.columns[path.columnPath].rows) == 0:
     deleteColumn(config=config, path=path.columnPath)
 
 proc insertPanel*(config: var Config; path: PanelPath; panel: Panel) =
-  getRow(config=config, path=path.rowPath).panels.insert(@[panel], path.index)
+  config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels.insert(@[panel], path.index)
 
 proc setActivePanel*(config: var Config; path: PanelPath) =
-  var row = getRow(config=config, path=path.rowPath)
-  assert path.index < len(row.panels)
-  row.activePanel = path.index
+  assert path.index < len(config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels)
+  config.columns[path.rowPath.columnPath].rows[path.rowPath.index].activePanel = path.index
 
 proc deletePanel*(config: var Config; path: PanelPath) =
-  var row = getRow(config=config, path=path.rowPath)
-  row.panels.delete(path.index)
-  if len(row.panels) == 0:
+  config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels.delete(path.index)
+  if len(config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels) == 0:
     deleteRow(config=config, path=path.rowPath)
+
+proc setPanelBody*(config: var Config; path: PanelPath, body: VNode) =
+  config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels[path.index].body = body
 
 proc movePanel*(config: var Config; src: PanelPath, dst: PanelPath) =
   let panel = getPanel(config=config, path=src)
@@ -168,12 +159,12 @@ proc movePanel*(config: var Config; src: PanelPath, dst: ColumnPath) =
     rows: @[],
     width: panel.minWidthPx
   ))
-  movePanel(config=config, src=src, dst=(
+  let rowPath = (
     columnPath: dst,
     index: Natural(0)
-  ))
-  var row = getRow(config=config, path=(columnPath: dst, index: Natural(0)))
-  row.height = panel.minHeightPx
+  )
+  movePanel(config=config, src=src, dst=rowPath)
+  config.columns[rowPath.columnPath].rows[rowPath.index].height = panel.minHeightPx
 
 proc hasColumnWorkingArea(config: Config; column: Column): bool =
   column.rows.any(proc (row: Row): bool =
@@ -202,7 +193,7 @@ proc renderRowHeader(config: Config; row: Row; path: RowPath): VNode =
   )
 
   result = buildHtml(tdiv(style=config.rowHeaderStyle(config=config, path=path))):
-    for panelIndex in countup(0, len(row.panels)):
+    for panelIndex in low(row.panels)..high(row.panels):
       let panelPath = (
         rowPath: path,
         index: Natural(panelIndex)
@@ -246,7 +237,7 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
   ).merge(config.columnStyle(config=config, path=path))
 
   result = buildHtml(tdiv(style=style)):
-    for rowIndex in countup(0, len(column.rows)):
+    for rowIndex in low(column.rows)..high(column.rows):
       renderRow(config=config, path=(
         columnPath: path,
         index: Natural(rowIndex)
@@ -258,5 +249,5 @@ proc karaDock*(config: Config = initialConfig): VNode =
     (StyleAttr.height, &config.height & "px"),
   )
   result = buildHtml(tdiv(style=style)):
-    for path in countup(0, len(config.columns)):
+    for path in low(config.columns)..high(config.columns):
       renderColumn(config=config, path=path)

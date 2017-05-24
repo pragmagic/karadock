@@ -187,34 +187,45 @@ proc getColumnWidthPx(config: Config; column: Column): int =
   else:
     return column.width
 
-proc renderRowHeader(config: Config; row: Row; path: RowPath): VNode =
-  let panelNameStyle = style(
+proc renderRowHeaderItem(config: Config; row: Row; panel: Panel; path: PanelPath): VNode =
+  proc onClick(ev: Event; n: VNode) =
+    kout row
+    kout path
+    kout panel
+    kout n
+    kout ev
+    if row.activePanel != path.index:
+      var config = config
+      config.setActivePanel(path=path)
+      config.onupdate(config)
+
+  proc onDragStart(ev: Event; n: VNode) =
+    var config = config
+    config.draggingPanel = some(path)
+    config.onupdate(config)
+
+  proc onDragEnd(ev: Event; n: VNode) =
+    var config = config
+    config.draggingPanel = none(PanelPath)
+    config.onupdate(config)
+
+  let style = style(
     (StyleAttr.display, cstring"inline-block"),
     (StyleAttr.cursor, cstring"pointer")
-  )
+  ).merge(config.panelNameStyle(config=config, path=path));
 
+  result = buildHtml(tdiv(style=style, onclick=onClick, ondragstart=onDragStart, ondragend=onDragEnd)):
+    text panel.name
+
+proc renderRowHeader(config: Config; row: Row; path: RowPath): VNode =
   result = buildHtml(tdiv(style=config.rowHeaderStyle(config=config, path=path))):
     for panelIndex in low(row.panels)..high(row.panels):
-      let panelPath = (
-        rowPath: path,
-        index: Natural(panelIndex)
-      )
-      let panel = getPanel(config=config, path=panelPath)
-
-      proc onDragStart(ev: Event; n: VNode) =
-        var config = config
-        config.draggingPanel = some(panelPath)
-        config.onupdate(config)
-
-      proc onDragEnd(ev: Event; n: VNode) =
-        var config = config
-        config.draggingPanel = none(PanelPath)
-        config.onupdate(config)
-
-      let style = panelNameStyle.merge(config.panelNameStyle(config=config, path=panelPath));
-
-      tdiv(style=style, ondragstart=onDragStart, ondragend=onDragEnd):
-        text panel.name
+        let panelPath = (
+          rowPath: path,
+          index: Natural(panelIndex)
+        )
+        let panel = config.getPanel(path=panelPath)
+        renderRowHeaderItem(config=config, row=row, panel=panel, path=panelPath)
 
 proc renderRow(config: Config; path: RowPath): VNode =
   let row = getRow(config=config, path=path)

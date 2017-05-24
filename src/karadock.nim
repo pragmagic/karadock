@@ -189,7 +189,8 @@ proc getColumnWidthPx(config: Config; column: Column): int =
 
 proc renderRowHeader(config: Config; row: Row; path: RowPath): VNode =
   let panelNameStyle = style(
-    StyleAttr.display, "inline"
+    (StyleAttr.display, cstring"inline-block"),
+    (StyleAttr.cursor, cstring"pointer")
   )
 
   result = buildHtml(tdiv(style=config.rowHeaderStyle(config=config, path=path))):
@@ -219,10 +220,22 @@ proc renderRow(config: Config; path: RowPath): VNode =
   let row = getRow(config=config, path=path)
 
   let style = style(
-    (StyleAttr.height, &int(round(row.height * config.height / 100)) & "px"),
+    (StyleAttr.position, cstring"relative"),
+    (StyleAttr.height, &int(round(row.height * config.height / 100)) & cstring"px")
   ).merge(config.rowStyle(config=config, path=path))
 
+  let resizerStyle = style(
+    (StyleAttr.position, cstring"absolute"),
+    (StyleAttr.left, cstring"0"),
+    (StyleAttr.right, cstring"0"),
+    (StyleAttr.top, cstring"-7px"),
+    (StyleAttr.height, cstring"7px"),
+    (StyleAttr.zIndex, cstring"100"),
+    (StyleAttr.cursor, cstring"row-resize")
+  )
+
   result = buildHtml(tdiv(style=style)):
+    tdiv(style=resizerStyle)
     if len(row.panels) > 1 or row.panels.any(proc (panel: Panel): bool = panel.forceDisplayName):
       renderRowHeader(config=config, row=row, path=path)
     row.panels[row.activePanel].body
@@ -231,12 +244,24 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
   let column = getColumn(config=config, path=path)
 
   let style = style(
-    (StyleAttr.display, cstring"inline"),
+    (StyleAttr.display, cstring"inline-block"),
     (StyleAttr.width, &getColumnWidthPx(config=config, column=column) & "px"),
-    (StyleAttr.position, cstring"relative")
+    (StyleAttr.position, cstring"relative"),
+    (StyleAttr.cssFloat, cstring"left")
   ).merge(config.columnStyle(config=config, path=path))
 
+  let resizerStyle = style(
+    (StyleAttr.position, cstring"absolute"),
+    (StyleAttr.left, cstring"-7px"),
+    (StyleAttr.top, cstring"0"),
+    (StyleAttr.bottom, cstring"0"),
+    (StyleAttr.width, cstring"7px"),
+    (StyleAttr.zIndex, cstring"100"),
+    (StyleAttr.cursor, cstring"col-resize")
+  )
+
   result = buildHtml(tdiv(style=style)):
+    tdiv(style=resizerStyle)
     for rowIndex in low(column.rows)..high(column.rows):
       renderRow(config=config, path=(
         columnPath: path,
@@ -245,8 +270,8 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
 
 proc karaDock*(config: Config = initialConfig): VNode =
   let style = style(
-    (StyleAttr.width, &config.width & "px"),
-    (StyleAttr.height, &config.height & "px"),
+    (StyleAttr.width, &config.width & cstring"px"),
+    (StyleAttr.height, &config.height & cstring"px"),
   )
   result = buildHtml(tdiv(style=style)):
     for path in low(config.columns)..high(config.columns):

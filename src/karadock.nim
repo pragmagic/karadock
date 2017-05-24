@@ -189,11 +189,6 @@ proc getColumnWidthPx(config: Config; column: Column): int =
 
 proc renderRowHeaderItem(config: Config; row: Row; panel: Panel; path: PanelPath): VNode =
   proc onClick(ev: Event; n: VNode) =
-    kout row
-    kout path
-    kout panel
-    kout n
-    kout ev
     if row.activePanel != path.index:
       var config = config
       config.setActivePanel(path=path)

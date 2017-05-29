@@ -1,5 +1,5 @@
 import sequtils, math, options
-import vdom, vstyles, components, karax, karaxdsl, jdict, jstrutils
+import karax, karaxdsl, kdom, vdom, vstyles, jdict, jstrutils
 
 type
   ColumnPath* = Natural
@@ -47,6 +47,8 @@ type
     panelNameStyle*: PanelStyle not nil
     panelNameDropPlaceholderStyle*: PanelStyle not nil
 
+    resizerStyle*: VStyle not nil
+
     draggingPanel*: Option[PanelPath] #NOTE: Should be replaced by https://developer.mozilla.org/en-US/docs/Web/API/DataTransfer but it's not supported by Karax because not in HTML5
 
     onupdate*: proc (config: Config) not nil
@@ -72,11 +74,15 @@ let initialConfig* = Config(
   panelNameStyle: emptyPanelStyle,
   panelNameDropPlaceholderStyle: emptyPanelStyle,
 
+  resizerStyle: VStyle(),
+
   draggingPanel: none(PanelPath),
 
   onupdate: discardOnUpdate,
   columns: @[]
 )
+
+var mousemoveProc, mouseupProc: proc (ev: Event) {.closure.} = nil
 
 proc getColumn*(config: Config; path: ColumnPath): Column =
   config.columns[path]
@@ -100,14 +106,47 @@ proc findPanelByName*(config: Config; name: cstring): Option[PanelPath] =
             index: Natural(p)
           ))
 
+proc hasColumnWorkingArea(config: Config; column: Column): bool =
+  column.rows.any(proc (row: Row): bool =
+    row.panels.any(proc (panel: Panel): bool =
+      panel.isWorkingArea
+    )
+  )
+
+proc getFixedColumnsWidth(config: Config): int =
+  var width = 0
+  for column in config.columns:
+    if not hasColumnWorkingArea(config=config, column=column):
+      width += column.width
+  return width
+
+proc getWorkingAreaColumnsAmount(config: Config): int =
+  var amount = 0
+  for column in config.columns:
+    if hasColumnWorkingArea(config=config, column=column):
+      amount += 1
+  return amount
+
 proc insertColumn*(config: var Config; path: ColumnPath; column: Column) =
   config.columns.insert(@[column], path)
 
 proc deleteColumn*(config: var Config; path: ColumnPath) =
   config.columns.delete(path)
 
-proc resizeColumn*(config: var Config; path: ColumnPath; width: int) =
-  config.columns[path].width = width
+proc resizeColumn*(config: var Config; path: ColumnPath; widthPx: int) =
+  let column = config.getColumn(path)
+  if hasColumnWorkingArea(config=config, column=column):
+    let freeSpace = config.width - config.getFixedColumnsWidth()
+    let width = int(round(widthPx * 100 / freeSpace))
+    let workingAreaColumnsAmount = config.getWorkingAreaColumnsAmount()
+    config.columns[path].width = width
+    if workingAreaColumnsAmount > 1:
+      let widthDiff = int(round((width - column.width) / (workingAreaColumnsAmount - 1)))
+      for columnIndex in low(config.columns)..high(config.columns):
+        if columnIndex != path:
+          config.columns[columnIndex].width -= widthDiff
+  else:
+    config.columns[path].width = widthPx
 
 proc insertRow*(config: var Config; path: RowPath; row: Row) =
   config.columns[path.columnPath].rows.insert(@[row], path.index)
@@ -116,6 +155,16 @@ proc deleteRow*(config: var Config; path: RowPath) =
   config.columns[path.columnPath].rows.delete(path.index)
   if len(config.columns[path.columnPath].rows) == 0:
     deleteColumn(config=config, path=path.columnPath)
+
+proc resizeRow*(config: var Config; path: RowPath; heightPx: int) =
+  let row = config.getRow(path)
+  let column = config.getColumn(path.columnPath)
+  let height = int(round(heightPx * 100 / config.height))
+  let heightDiff = int(round((height - row.height) / (len(column.rows) - 1)))
+  config.columns[path.columnPath].rows[path.index].height = height
+  for rowIndex in low(column.rows)..high(column.rows):
+    if rowIndex != path.index:
+      config.columns[path.columnPath].rows[rowIndex].height -= heightDiff
 
 proc insertPanel*(config: var Config; path: PanelPath; panel: Panel) =
   config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels.insert(@[panel], path.index)
@@ -166,19 +215,8 @@ proc movePanel*(config: var Config; src: PanelPath, dst: ColumnPath) =
   movePanel(config=config, src=src, dst=rowPath)
   config.columns[rowPath.columnPath].rows[rowPath.index].height = panel.minHeightPx
 
-proc hasColumnWorkingArea(config: Config; column: Column): bool =
-  column.rows.any(proc (row: Row): bool =
-    row.panels.any(proc (panel: Panel): bool =
-      panel.isWorkingArea
-    )
-  )
-
-proc getFixedColumnsWidth(config: Config): int =
-  var width = 0
-  for column in config.columns:
-    if not hasColumnWorkingArea(config=config, column=column):
-      width += column.width
-  return width
+proc getRowHeightPx(config: Config; row: Row): int =
+  int(round(row.height * config.height / 100))
 
 proc getColumnWidthPx(config: Config; column: Column): int =
   if hasColumnWorkingArea(config=config, column=column):
@@ -223,51 +261,95 @@ proc renderRowHeader(config: Config; row: Row; path: RowPath): VNode =
         renderRowHeaderItem(config=config, row=row, panel=panel, path=panelPath)
 
 proc renderRow(config: Config; path: RowPath): VNode =
-  let row = getRow(config=config, path=path)
+  let column = config.getColumn(path.columnPath)
+  let row = config.getRow(path)
+  let height = config.getRowHeightPx(row)
+  let resizerId = cstring"karadock-row-" & &path.columnPath & cstring"-" & &path.index
 
   let style = style(
     (StyleAttr.position, cstring"relative"),
-    (StyleAttr.height, &int(round(row.height * config.height / 100)) & cstring"px")
+    (StyleAttr.height, &height & cstring"px")
   ).merge(config.rowStyle(config=config, path=path))
 
   let resizerStyle = style(
     (StyleAttr.position, cstring"absolute"),
     (StyleAttr.left, cstring"0"),
     (StyleAttr.right, cstring"0"),
-    (StyleAttr.top, cstring"-7px"),
-    (StyleAttr.height, cstring"7px"),
+    (StyleAttr.bottom, cstring"-5px"),
+    (StyleAttr.height, cstring"5px"),
     (StyleAttr.zIndex, cstring"100"),
     (StyleAttr.cursor, cstring"row-resize")
   )
 
+  var resizerStartY: int = 0
+
+  proc onResizerMouseDown(ev: Event; n: VNode) =
+    preventDefault(ev)
+    resizerStartY = ev.clientY;
+
+    mousemoveProc = proc (ev: Event) =
+      document.getElementById(resizerId).applyStyle(resizerStyle.merge(
+        style(StyleAttr.bottom, &(resizerStartY - ev.clientY) & cstring"px")
+      ).merge(config.resizerStyle))
+
+    mouseupProc =  proc (ev: Event) =
+      mousemoveProc = nil
+      mouseupProc = nil
+      var config = config
+      config.resizeRow(path=path, heightPx=height + ev.clientY - resizerStartY)
+      config.onupdate(config)
+
   result = buildHtml(tdiv(style=style)):
-    tdiv(style=resizerStyle)
+    if path.index != high(column.rows):
+      tdiv(id=resizerId, style=resizerStyle, onmousedown=onResizerMouseDown)
     if len(row.panels) > 1 or row.panels.any(proc (panel: Panel): bool = panel.forceDisplayName):
       renderRowHeader(config=config, row=row, path=path)
     row.panels[row.activePanel].body
 
 proc renderColumn(config: Config; path: ColumnPath): VNode =
   let column = getColumn(config=config, path=path)
+  let width = getColumnWidthPx(config=config, column=column)
+  let resizerId = cstring"karadock-column-" & &path
 
-  let style = style(
+  let columnStyle = style(
     (StyleAttr.display, cstring"inline-block"),
-    (StyleAttr.width, &getColumnWidthPx(config=config, column=column) & "px"),
+    (StyleAttr.width, &width & "px"),
     (StyleAttr.position, cstring"relative"),
     (StyleAttr.cssFloat, cstring"left")
   ).merge(config.columnStyle(config=config, path=path))
 
   let resizerStyle = style(
+    (StyleAttr.backgroundColor, cstring"transparent"),
     (StyleAttr.position, cstring"absolute"),
-    (StyleAttr.left, cstring"-7px"),
+    (StyleAttr.right, cstring"-5px"),
     (StyleAttr.top, cstring"0"),
     (StyleAttr.bottom, cstring"0"),
-    (StyleAttr.width, cstring"7px"),
+    (StyleAttr.width, cstring"5px"),
     (StyleAttr.zIndex, cstring"100"),
     (StyleAttr.cursor, cstring"col-resize")
   )
 
-  result = buildHtml(tdiv(style=style)):
-    tdiv(style=resizerStyle)
+  var resizerStartX: int = 0
+
+  proc onResizerMouseDown(ev: Event; n: VNode) =
+    preventDefault(cast[kdom.Event](ev))
+    resizerStartX = ev.clientX;
+
+    mousemoveProc = proc (ev: Event) =
+      document.getElementById(resizerId).applyStyle(resizerStyle.merge(
+        style(StyleAttr.right, &(resizerStartX - ev.clientX) & cstring"px")
+      ).merge(config.resizerStyle))
+
+    mouseupProc =  proc (ev: Event) =
+      mousemoveProc = nil
+      mouseupProc = nil
+      var config = config
+      config.resizeColumn(path=path, widthPx=width + (ev.clientX - resizerStartX))
+      config.onupdate(config)
+
+  result = buildHtml(tdiv(style=columnStyle)):
+    if path != high(config.columns):
+      tdiv(id=resizerId, style=resizerStyle, onmousedown=onResizerMouseDown)
     for rowIndex in low(column.rows)..high(column.rows):
       renderRow(config=config, path=(
         columnPath: path,
@@ -282,3 +364,14 @@ proc karaDock*(config: Config = initialConfig): VNode =
   result = buildHtml(tdiv(style=style)):
     for path in low(config.columns)..high(config.columns):
       renderColumn(config=config, path=path)
+
+document.addEventListener(cstring"mousemove", proc(event: Event) =
+  if mousemoveProc != nil:
+    preventDefault(event)
+    mousemoveProc(event)
+)
+
+document.addEventListener(cstring"mouseup", proc(event: Event) =
+  if mouseupProc != nil:
+    mouseupProc(event)
+)

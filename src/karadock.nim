@@ -116,12 +116,19 @@ proc hasColumnWorkingArea(config: Config; column: Column): bool =
     )
   )
 
-proc getFixedColumnsWidth(config: Config): int =
-  var width = 0
+proc getFixedColumnsWidth(config: Config): float =
+  var width: float = 0
   for column in config.columns:
     if not hasColumnWorkingArea(config=config, column=column):
-      width += int(column.width)
+      width += column.width
   return width
+
+proc getColumnWidthPx(config: Config; column: Column): float =
+  if hasColumnWorkingArea(config=config, column=column):
+    let freeSpace = float(config.width) - getFixedColumnsWidth(config=config)
+    return column.width * float(freeSpace) / 100
+  else:
+    return column.width
 
 proc getWorkingAreaColumnsAmount(config: Config): int =
   var amount = 0
@@ -139,17 +146,22 @@ proc insertColumn*(config: var Config; path: ColumnPath; column: Column) =
 proc resizeColumn*(config: var Config; path: ColumnPath; widthPx: float) =
   let column = config.getColumn(path)
   if hasColumnWorkingArea(config=config, column=column):
-    let freeSpace = config.width - config.getFixedColumnsWidth()
-    let width = widthPx * 100 / float(freeSpace)
     let workingAreaColumnsAmount = config.getWorkingAreaColumnsAmount()
-    config.columns[path].width = width
     if workingAreaColumnsAmount > 1:
+      let freeSpace = float(config.width) - config.getFixedColumnsWidth()
+      let width = widthPx * 100 / float(freeSpace)
+      config.columns[path].width = width
       let widthDiff = (width - column.width) / float(workingAreaColumnsAmount - 1)
       for columnIndex in low(config.columns)..high(config.columns):
         if columnIndex != path:
           config.columns[columnIndex].width -= widthDiff
+    else:
+      let nextPath = Natural(path+1)
+      let nextColumn = config.getColumn(nextPath)
+      let widthDiff = config.getColumnWidthPx(column) - widthPx
+      config.resizeColumn(path=nextPath, widthPx=nextColumn.width + widthDiff)
   else:
-    config.columns[path].width = float(widthPx)
+    config.columns[path].width = widthPx
 
 proc deleteColumn*(config: var Config; path: ColumnPath) =
   config.resizeColumn(path=path, widthPx=0)
@@ -262,13 +274,6 @@ proc movePanel*(config: var Config; src: PanelPath, dst: ColumnPath) =
     index: Natural(0)
   )
   movePanel(config=config, src=src, dst=rowPath)
-
-proc getColumnWidthPx(config: Config; column: Column): float =
-  if hasColumnWorkingArea(config=config, column=column):
-    let freeSpace = config.width - getFixedColumnsWidth(config=config)
-    return column.width * float(freeSpace) / 100
-  else:
-    return column.width
 
 proc renderRowHeaderItem(config: Config; row: Row; panel: Panel; path: PanelPath): VNode =
   let leftDropPlaceHolderId = cstring"karadock-column-" & &path.rowPath.columnPath & cstring"-row-" & &path.rowPath.index & "-panel-" & &path.index & cstring"-drop-left"

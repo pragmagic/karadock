@@ -9,4 +9,4 @@ srcDir        = "src"
 # Dependencies
 
 requires "nim >= 0.17"
-requires "https://github.com/pragmagic/karax"
+requires "karax"

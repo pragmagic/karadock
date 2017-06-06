@@ -154,8 +154,6 @@ karaDock(config)
 
 ## TODO
 
-* Replace `Config.draggingPanel` by HTML 5.1 `DataTransfer` or by internal state.
-* Implement Drag & Drop for panels.
 * Automatically collapse/expand rows based on current available `config.height` and sum of `Panel.minHeightPx`.
 * Automatically wrap right columns to the left based on current available `config.width` and `Column.width`.
 

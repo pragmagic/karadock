@@ -16,7 +16,7 @@ type
   RowStyle* = proc(config: Config; path: RowPath): VStyle
   PanelStyle* = proc(config: Config; path: PanelPath): VStyle
 
-  Panel* = object
+  Panel* = ref object
     name*: cstring not nil
     isWorkingArea*: bool
     forceDisplayName*: bool
@@ -24,16 +24,16 @@ type
     minHeightPx*: int
     body*: VNode
 
-  Row* = object
+  Row* = ref object
     panels*: seq[Panel] not nil
     activePanel*: Natural
     height*: float #NOTE: Percents
 
-  Column* = object
+  Column* = ref object
     rows*: seq[Row] not nil
     width*: float #NOTE: Will be in percents for any column which has working area panel
 
-  Config* = object
+  Config* = ref object
     width*: int
     height*: int
 
@@ -288,11 +288,9 @@ proc renderRowHeaderItem(config: Config; row: Row; panel: Panel; path: PanelPath
   proc onDragStart(ev: Event; n: VNode) =
     draggingPanel = some(path)
 
-    n.dom.addEventListener(cstring"dragend", proc(event: Event) =
-      draggingPanel = none(PanelPath)
-      dragOverId = nil
-      redraw()
-    )
+  proc onDragEnd(ev: Event; n: VNode) =
+    draggingPanel = none(PanelPath)
+    dragOverId = nil
 
   proc onDropPlaceholderDragEnter(dropPlaceholderId: cstring): proc (ev: Event; n: VNode) =
     result = proc (ev: Event; n: VNode) =
@@ -300,10 +298,9 @@ proc renderRowHeaderItem(config: Config; row: Row; panel: Panel; path: PanelPath
         ev.preventDefault()
         dragOverId = dropPlaceholderId
 
-        n.dom.addEventListener(cstring"dragover", proc(event: Event) =
-          if draggingPanel.isSome and dragOverId != nil:
-            preventDefault(event)
-        )
+  proc onDragOverPlaceholder(ev: Event; n: VNode) =
+    if draggingPanel.isSome and dragOverId != nil:
+      preventDefault(ev)
 
   proc onDropPlaceholder(ev: Event; n: VNode) =
     if draggingPanel.isSome and dragOverId != nil:
@@ -362,13 +359,15 @@ proc renderRowHeaderItem(config: Config; row: Row; panel: Panel; path: PanelPath
       tdiv(
         style=dropPlaceholderRightStyle,
         ondragenter=onDropPlaceholderDragEnter(rightDropPlaceHolderId),
+        ondragover=onDragOverPlaceholder,
         ondrop=onDropPlaceholder
       )
-    tdiv(style=style, draggable=cstring"true", onclick=onClick, ondragstart=onDragStart):
+    tdiv(style=style, draggable=cstring"true", onclick=onClick, ondragstart=onDragStart, ondragend=onDragEnd):
       if draggingPanel.isSome:
         tdiv(
           style=dropPlaceholderLeftStyle,
           ondragenter=onDropPlaceholderDragEnter(leftDropPlaceHolderId),
+          ondragover=onDragOverPlaceholder,
           ondrop=onDropPlaceholder
         )
       text panel.name
@@ -469,10 +468,9 @@ proc renderRow(config: Config; path: RowPath): VNode =
         ev.preventDefault()
         dragOverId = dropPlaceholderId
 
-        n.dom.addEventListener(cstring"dragover", proc(event: Event) =
-          if draggingPanel.isSome and dragOverId != nil:
-            preventDefault(event)
-        )
+  proc onDragOverPlaceholder(ev: Event; n: VNode) =
+    if draggingPanel.isSome and dragOverId != nil:
+      preventDefault(ev)
 
   proc onDropPlaceholder(ev: Event; n: VNode) =
     if draggingPanel.isSome and dragOverId != nil:
@@ -501,12 +499,14 @@ proc renderRow(config: Config; path: RowPath): VNode =
         tdiv(
           style=dropPlaceholderTopStyle,
           ondragenter=onDropPlaceholderDragEnter(topDropPlaceHolderId),
+          ondragover=onDragOverPlaceholder,
           ondrop=onDropPlaceholder
         )
         if path.index == high(column.rows):
           tdiv(
             style=dropPlaceholderBottomStyle,
             ondragenter=onDropPlaceholderDragEnter(bottomDropPlaceHolderId),
+            ondragover=onDragOverPlaceholder,
             ondrop=onDropPlaceholder
           )
       row.panels[row.activePanel].body
@@ -590,10 +590,9 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
         ev.preventDefault()
         dragOverId = dropPlaceholderId
 
-        n.dom.addEventListener(cstring"dragover", proc(event: Event) =
-          if draggingPanel.isSome and dragOverId != nil:
-            preventDefault(event)
-        )
+  proc onDragOverPlaceholder(ev: Event; n: VNode) =
+    if draggingPanel.isSome and dragOverId != nil:
+      preventDefault(ev)
 
   proc onDropPlaceholder(ev: Event; n: VNode) =
     if draggingPanel.isSome and dragOverId != nil:
@@ -615,12 +614,14 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
       tdiv(
         style=dropPlaceholderLeftStyle,
         ondragenter=onDropPlaceholderDragEnter(leftDropPlaceHolderId),
+        ondragover=onDragOverPlaceholder,
         ondrop=onDropPlaceholder
       )
       if path == high(config.columns):
         tdiv(
           style=dropPlaceholderRightStyle,
           ondragenter=onDropPlaceholderDragEnter(rightDropPlaceHolderId),
+          ondragover=onDragOverPlaceholder,
           ondrop=onDropPlaceholder
         )
 

@@ -390,7 +390,7 @@ proc renderRow(config: Config; path: RowPath): VNode =
   let column = config.getColumn(path.columnPath)
   let row = config.getRow(path)
   let height = config.getRowHeightPx(row)
-  let resizerId = cstring"karadock-row-" & &path.columnPath & cstring"-" & &path.index
+  var resizer: VNode = nil
   let topDropPlaceHolderId = cstring"karadock-column-" & &path.columnPath & cstring"-row-" & &path.index & cstring"-drop-top"
   let bottomDropPlaceHolderId = cstring"karadock-column-" & &path.columnPath & cstring"-row-" & &path.index & cstring"-drop-bottom"
 
@@ -451,7 +451,7 @@ proc renderRow(config: Config; path: RowPath): VNode =
     resizerStartY = ev.clientY;
 
     mousemoveProc = proc (ev: Event) =
-      document.getElementById(resizerId).applyStyle(resizerStyle.merge(
+      resizer.dom.applyStyle(resizerStyle.merge(
         style(StyleAttr.bottom, &(resizerStartY - ev.clientY) & cstring"px")
       ).merge(config.resizerStyle))
 
@@ -487,9 +487,11 @@ proc renderRow(config: Config; path: RowPath): VNode =
       dragOverId = nil
       config.onupdate(config)
 
+  resizer = buildHtml(tdiv(style=resizerStyle, onmousedown=onResizerMouseDown))
+
   result = buildHtml(tdiv(style=style)):
     if path.index != high(column.rows):
-      tdiv(id=resizerId, style=resizerStyle, onmousedown=onResizerMouseDown)
+      resizer
 
     if len(row.panels) > 1 or row.panels.any(proc (panel: Panel): bool = panel.forceDisplayName):
       renderRowHeader(config=config, row=row, path=path)
@@ -514,7 +516,7 @@ proc renderRow(config: Config; path: RowPath): VNode =
 proc renderColumn(config: Config; path: ColumnPath): VNode =
   let column = getColumn(config=config, path=path)
   let width = getColumnWidthPx(config=config, column=column)
-  let resizerId = cstring"karadock-column-" & &path
+  var resizer: VNode = nil
   let leftDropPlaceHolderId = cstring"karadock-column-" & &path & cstring"-drop-left"
   let rightDropPlaceHolderId = cstring"karadock-column-" & &path & cstring"-drop-right"
 
@@ -573,7 +575,7 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
     resizerStartX = ev.clientX;
 
     mousemoveProc = proc (ev: Event) =
-      document.getElementById(resizerId).applyStyle(resizerStyle.merge(
+      resizer.dom.applyStyle(resizerStyle.merge(
         style(StyleAttr.right, &(resizerStartX - ev.clientX) & cstring"px")
       ).merge(config.resizerStyle))
 
@@ -606,9 +608,11 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
       dragOverId = nil
       config.onupdate(config)
 
+  resizer = buildHtml(tdiv(style=resizerStyle, onmousedown=onResizerMouseDown))
+
   result = buildHtml(tdiv(style=columnStyle)):
     if path != high(config.columns):
-      tdiv(id=resizerId, style=resizerStyle, onmousedown=onResizerMouseDown)
+      resizer
 
     if draggingPanel.isSome:
       tdiv(

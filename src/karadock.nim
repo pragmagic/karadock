@@ -96,7 +96,7 @@ proc getRow*(config: Config; path: RowPath): Row =
 proc getPanel*(config: Config; path: PanelPath): Panel =
   getRow(config=config, path=path.rowPath).panels[path.index]
 
-proc findPanelByName*(config: Config; name: cstring): Option[PanelPath] =
+proc findPanel*(config: Config; name: cstring): Option[PanelPath] =
   for c, column in pairs(config.columns):
     for r, row in pairs(column.rows):
       for p, panel in pairs(row.panels):
@@ -108,6 +108,13 @@ proc findPanelByName*(config: Config; name: cstring): Option[PanelPath] =
             ),
             index: Natural(p)
           ))
+
+proc findPanelColumn*(config: Config; panelName: cstring): Option[ColumnPath] =
+  for c, column in pairs(config.columns):
+    for r, row in pairs(column.rows):
+      for p, panel in pairs(row.panels):
+        if panel.name == panelName:
+          return some(ColumnPath(c))
 
 proc hasColumnWorkingArea(config: Config; column: Column): bool =
   column.rows.any(proc (row: Row): bool =

@@ -180,6 +180,7 @@ To run the example above:
 
 ## TODO
 
+* Use UUID instead of numeric indexes as panel/row/column paths.
 * Automatically collapse/expand rows based on current available `config.height` and sum of `Panel.minHeightPx`.
 * Automatically wrap right columns to the left based on current available `config.width` and `Column.width`.
 

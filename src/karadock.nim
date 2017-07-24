@@ -53,50 +53,28 @@ type
     onupdate*: proc (config: Config) not nil
     columns*: seq[Column] not nil
 
-proc emptyColumnStyle(config: Config; path: ColumnPath): VStyle = VStyle()
-proc emptyRowStyle(config: Config; path: RowPath): VStyle = VStyle()
-proc emptyPanelStyle(config: Config; path: PanelPath): VStyle = VStyle()
+{.experimental.}
 
-proc discardOnUpdate*(config: Config) = discard
-
-let initialConfig* = Config(
-  width: 0,
-  height: 0,
-
-  columnStyle: emptyColumnStyle,
-  columnDropPlaceholderStyle: emptyColumnStyle,
-
-  rowStyle: emptyRowStyle,
-  rowHeaderStyle: emptyRowStyle,
-  rowDropPlaceholderStyle: emptyRowStyle,
-
-  panelNameStyle: emptyPanelStyle,
-  panelNameDropPlaceholderStyle: emptyPanelStyle,
-  panelBodyStyle: emptyPanelStyle,
-
-  resizerStyle: VStyle(),
-
-  onupdate: discardOnUpdate,
-  columns: @[]
-)
+using
+  event: Event
+  node: VNode
+  config: Config
 
 var draggingPanel: Option[PanelPath] = none(PanelPath)
 var dragOverId: cstring = nil
 
 var mousemoveProc, mouseupProc: proc (ev: Event) {.closure.} = nil
 
-proc `&`*(s: float): cstring {.importcpp: "((#)+'')", nodecl.}
-
-proc getColumn*(config: Config; path: ColumnPath): Column =
+proc getColumn*(config; path: ColumnPath): Column =
   config.columns[path]
 
-proc getRow*(config: Config; path: RowPath): Row =
-  getColumn(config=config, path=path.columnPath).rows[path.index]
+proc getRow*(config; path: RowPath): Row =
+  config.getColumn(path.columnPath).rows[path.index]
 
-proc getPanel*(config: Config; path: PanelPath): Panel =
-  getRow(config=config, path=path.rowPath).panels[path.index]
+proc getPanel*(config; path: PanelPath): Panel =
+  config.getRow(path.rowPath).panels[path.index]
 
-proc findPanel*(config: Config; name: cstring): Option[PanelPath] =
+proc findPanel*(config; name: cstring): Option[PanelPath] =
   for c, column in pairs(config.columns):
     for r, row in pairs(column.rows):
       for p, panel in pairs(row.panels):
@@ -109,14 +87,14 @@ proc findPanel*(config: Config; name: cstring): Option[PanelPath] =
             index: Natural(p)
           ))
 
-proc findPanelColumn*(config: Config; panelName: cstring): Option[ColumnPath] =
+proc findPanelColumn*(config; panelName: cstring): Option[ColumnPath] =
   for c, column in pairs(config.columns):
     for r, row in pairs(column.rows):
       for p, panel in pairs(row.panels):
         if panel.name == panelName:
           return some(ColumnPath(c))
 
-proc hasColumnWorkingArea(config: Config; column: Column): bool =
+proc hasColumnWorkingArea(config; column: Column): bool =
   column.rows.any(proc (row: Row): bool =
     row.panels.any(proc (panel: Panel): bool =
       panel.isWorkingArea
@@ -126,33 +104,55 @@ proc hasColumnWorkingArea(config: Config; column: Column): bool =
 proc getFixedColumnsWidth(config: Config): float =
   var width: float = 0
   for column in config.columns:
-    if not hasColumnWorkingArea(config=config, column=column):
+    if not config.hasColumnWorkingArea(column):
       width += column.width
   return width
 
-proc getColumnWidthPx(config: Config; column: Column): float =
-  if hasColumnWorkingArea(config=config, column=column):
-    let freeSpace = float(config.width) - getFixedColumnsWidth(config=config)
+proc getColumnWidthPx(config; column: Column): float =
+  if config.hasColumnWorkingArea(column):
+    let freeSpace = float(config.width) - config.getFixedColumnsWidth()
     return column.width * float(freeSpace) / 100
   else:
     return column.width
 
+proc getColumnMinWidthPx*(config; column: Column): int =
+  result = high(int)
+  for row in column.rows:
+    for panel in row.panels:
+      if panel.minWidthPx < result:
+        result = panel.minWidthPx
+
 proc getWorkingAreaColumnsAmount(config: Config): int =
   var amount = 0
   for column in config.columns:
-    if hasColumnWorkingArea(config=config, column=column):
+    if config.hasColumnWorkingArea(column):
       amount += 1
   return amount
 
-proc insertColumn*(config: var Config; path: ColumnPath; column: Column) =
+proc getColumnMaxWidthPx*(config; path: ColumnPath): float =
+  let column = config.getColumn(path)
+  let currentWidthPx = config.getColumnWidthPx(column)
+  let workingAreaColumnsAmount = config.getWorkingAreaColumnsAmount()
+  if config.hasColumnWorkingArea(column) and workingAreaColumnsAmount == 1 and path + 1 <= high(config.columns):
+    let nextColumn = config.getColumn(Natural(path + 1))
+    result = currentWidthPx + nextColumn.width - float(config.getColumnMinWidthPx(nextColumn))
+  else:
+    result = float(config.width)
+    for c in config.columns:
+      if config.hasColumnWorkingArea(c):
+        result -= float(config.getColumnMinWidthPx(c))
+      elif column != c:
+        result -= c.width
+
+proc insertColumn*(config; path: ColumnPath; column: Column) =
   if path > high(config.columns):
     config.columns.add(column)
   else:
     config.columns.insert(@[column], path)
 
-proc resizeColumn*(config: var Config; path: ColumnPath; widthPx: float) =
+proc resizeColumn*(config; path: ColumnPath; widthPx: float) =
   let column = config.getColumn(path)
-  if hasColumnWorkingArea(config=config, column=column):
+  if config.hasColumnWorkingArea(column):
     let workingAreaColumnsAmount = config.getWorkingAreaColumnsAmount()
     if workingAreaColumnsAmount > 1:
       let freeSpace = float(config.width) - config.getFixedColumnsWidth()
@@ -163,24 +163,24 @@ proc resizeColumn*(config: var Config; path: ColumnPath; widthPx: float) =
         if columnIndex != path:
           config.columns[columnIndex].width -= widthDiff
     else:
-      let nextPath = Natural(path+1)
+      let nextPath = Natural(path + 1)
       let nextColumn = config.getColumn(nextPath)
       let widthDiff = config.getColumnWidthPx(column) - widthPx
       config.resizeColumn(path=nextPath, widthPx=nextColumn.width + widthDiff)
   else:
     config.columns[path].width = widthPx
 
-proc deleteColumn*(config: var Config; path: ColumnPath) =
+proc deleteColumn*(config; path: ColumnPath) =
   config.resizeColumn(path=path, widthPx=0)
   config.columns.delete(path)
 
-proc insertRow*(config: var Config; path: RowPath; row: Row) =
+proc insertRow*(config; path: RowPath; row: Row) =
   if path.index > high(config.columns[path.columnPath].rows):
     config.columns[path.columnPath].rows.add(row)
   else:
     config.columns[path.columnPath].rows.insert(@[row], path.index)
 
-proc resizeRow*(config: var Config; path: RowPath; heightPx: float) =
+proc resizeRow*(config; path: RowPath; heightPx: float) =
   let row = config.getRow(path)
   let column = config.getColumn(path.columnPath)
   let height = heightPx * 100 / float(config.height)
@@ -195,44 +195,63 @@ proc resizeRow*(config: var Config; path: RowPath; heightPx: float) =
     if rowIndex != path.index:
       config.columns[path.columnPath].rows[rowIndex].height -= heightDiff
 
-proc getRowHeightPx(config: Config; row: Row): float =
+proc getRowHeightPx(config; row: Row): float =
   row.height * float(config.height) / 100
 
-proc deleteRow*(config: var Config; path: RowPath) =
+proc getRowMinHeightPx*(config; row: Row): int =
+  result = high(int)
+  for panel in row.panels:
+    if panel.minHeightPx < result:
+      result = panel.minHeightPx
+
+proc getRowMaxHeightPx*(config; path: RowPath): float =
+  let column = config.getColumn(path.columnPath)
+  var resizeFromIndex =
+    if path.index < high(column.rows):
+      path.index + 1
+    else:
+      Natural(0)
+  result = float(config.height)
+  for rowIndex in resizeFromIndex..high(column.rows):
+    if rowIndex != path.index:
+      let row = config.getRow((
+        columnPath: path.columnPath,
+        index: Natural(rowIndex)
+      ))
+      result -= float(config.getRowMinHeightPx(row))
+
+proc deleteRow*(config; path: RowPath) =
   config.resizeRow(path=path, heightPx=0)
   config.columns[path.columnPath].rows.delete(path.index)
   if len(config.columns[path.columnPath].rows) == 0:
-    deleteColumn(config=config, path=path.columnPath)
+    config.deleteColumn(path.columnPath)
 
-proc insertPanel*(config: var Config; path: PanelPath; panel: Panel) =
+proc insertPanel*(config; path: PanelPath; panel: Panel) =
   if path.index > high(config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels):
     config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels.add(panel)
   else:
     config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels.insert(@[panel], path.index)
 
-proc setActivePanel*(config: var Config; path: PanelPath) =
+proc setActivePanel*(config; path: PanelPath) =
   assert path.index < len(config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels)
   config.columns[path.rowPath.columnPath].rows[path.rowPath.index].activePanel = path.index
 
-proc deletePanel*(config: var Config; path: PanelPath) =
+proc deletePanel*(config; path: PanelPath) =
   config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels.delete(path.index)
   if len(config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels) == 0:
-    deleteRow(config=config, path=path.rowPath)
+    config.deleteRow(path.rowPath)
   else:
     config.columns[path.rowPath.columnPath].rows[path.rowPath.index].activePanel = 0
 
-proc setPanelBody*(config: var Config; path: PanelPath; body: VNode) =
-  config.columns[path.rowPath.columnPath].rows[path.rowPath.index].panels[path.index].body = body
-
-proc movePanel*(config: var Config; src: PanelPath; dst: PanelPath) =
-  let panel = getPanel(config=config, path=src)
-  insertPanel(config=config, path=dst, panel=panel)
-  deletePanel(config=config, path=(
+proc movePanel*(config; src: PanelPath; dst: PanelPath) =
+  let panel = config.getPanel(src)
+  config.insertPanel(path=dst, panel=panel)
+  config.deletePanel(path=(
     rowPath: src.rowPath,
     index: if src.rowPath == dst.rowPath and dst.index < src.index: Natural(src.index + 1) else: src.index
   ))
 
-proc movePanel*(config: var Config; src: PanelPath, dst: RowPath) =
+proc movePanel*(config; src: PanelPath, dst: RowPath) =
   let panel = config.getPanel(src)
   let srcRow = config.getRow(src.rowPath)
   let srcRowHeight = config.getRowHeightPx(srcRow)
@@ -263,9 +282,9 @@ proc movePanel*(config: var Config; src: PanelPath, dst: RowPath) =
     index: Natural(0)
   ))
 
-proc movePanel*(config: var Config; src: PanelPath, dst: ColumnPath) =
-  let panel = getPanel(config=config, path=src)
-  insertColumn(config=config, path=dst, Column(
+proc movePanel*(config; src: PanelPath, dst: ColumnPath) =
+  let panel = config.getPanel(src)
+  config.insertColumn(path=dst, Column(
     rows: @[],
     width: float(panel.minWidthPx)
   ))
@@ -280,15 +299,14 @@ proc movePanel*(config: var Config; src: PanelPath, dst: ColumnPath) =
     columnPath: dst,
     index: Natural(0)
   )
-  movePanel(config=config, src=src, dst=rowPath)
+  config.movePanel(src=src, dst=rowPath)
 
-proc renderRowHeaderItem(config: Config; row: Row; panel: Panel; path: PanelPath): VNode =
+proc renderRowHeaderItem(config; row: Row; panel: Panel; path: PanelPath): VNode =
   let leftDropPlaceHolderId = cstring"karadock-column-" & &path.rowPath.columnPath & cstring"-row-" & &path.rowPath.index & "-panel-" & &path.index & cstring"-drop-left"
   let rightDropPlaceHolderId = cstring"karadock-column-" & &path.rowPath.columnPath & cstring"-row-" & &path.rowPath.index & "-panel-" & &path.index & cstring"-drop-right"
 
   proc onClick(ev: Event; n: VNode) =
     if row.activePanel != path.index:
-      var config = config
       config.setActivePanel(path=path)
       config.onupdate(config)
 
@@ -312,7 +330,6 @@ proc renderRowHeaderItem(config: Config; row: Row; panel: Panel; path: PanelPath
   proc onDropPlaceholder(ev: Event; n: VNode) =
     if draggingPanel.isSome and dragOverId != nil:
       preventDefault(ev)
-      var config = config
       var dst: PanelPath = path
       if dragOverId == rightDropPlaceHolderId:
         dst = (
@@ -379,8 +396,9 @@ proc renderRowHeaderItem(config: Config; row: Row; panel: Panel; path: PanelPath
         )
       text panel.name
 
-proc renderRowHeader(config: Config; row: Row; path: RowPath): VNode =
+proc renderRowHeader(config; row: Row; path: RowPath): VNode =
   let style = style(
+    (StyleAttr.flex, cstring"0 0 auto"),
     (StyleAttr.position, cstring"relative"),
     (StyleAttr.overflow, cstring"hidden")
   ).merge(config.rowHeaderStyle(config=config, path=path))
@@ -393,22 +411,30 @@ proc renderRowHeader(config: Config; row: Row; path: RowPath): VNode =
       let panel = config.getPanel(path=panelPath)
       renderRowHeaderItem(config=config, row=row, panel=panel, path=panelPath)
 
-proc renderRow(config: Config; path: RowPath): VNode =
+proc renderRow(config; path: RowPath): VNode =
   let column = config.getColumn(path.columnPath)
   let row = config.getRow(path)
-  let height = config.getRowHeightPx(row)
+  let minHeight = float(config.getRowMinHeightPx(row))
+  let maxHeight = float(config.getRowMaxHeightPx(path))
+  var height = config.getRowHeightPx(row)
+  if height < minHeight:
+    height = minHeight
   var resizer: VNode = nil
   let topDropPlaceHolderId = cstring"karadock-column-" & &path.columnPath & cstring"-row-" & &path.index & cstring"-drop-top"
   let bottomDropPlaceHolderId = cstring"karadock-column-" & &path.columnPath & cstring"-row-" & &path.index & cstring"-drop-bottom"
 
   let style = style(
+    (StyleAttr.display, cstring"flex"),
+    (StyleAttr.flexDirection, cstring"column"),
+    (StyleAttr.alignContent, cstring"stretch"),
     (StyleAttr.position, cstring"relative"),
     (StyleAttr.height, &height & cstring"px")
   ).merge(config.rowStyle(config=config, path=path))
 
   let bodyStyle = style(
-    (StyleAttr.position, cstring"relative"),
-    (StyleAttr.height, cstring"100%")
+    (StyleAttr.flex, cstring"1 1 0"),
+    (StyleAttr.minHeight, cstring"0"),
+    (StyleAttr.position, cstring"relative")
   ).merge(config.panelBodyStyle(config=config, path=(rowPath: path, index: row.activePanel)))
 
   let resizerStyle = style(
@@ -458,15 +484,27 @@ proc renderRow(config: Config; path: RowPath): VNode =
     resizerStartY = ev.clientY;
 
     mousemoveProc = proc (ev: Event) =
+      var diff = float(ev.clientY - resizerStartY)
+      let newHeight = height + diff
+      if newHeight < minHeight:
+        diff = minHeight - height
+      elif newHeight > maxHeight:
+        diff = maxHeight - height
       resizer.dom.applyStyle(resizerStyle.merge(
-        style(StyleAttr.bottom, &(resizerStartY - ev.clientY) & cstring"px")
+        style(StyleAttr.bottom, &(-diff) & cstring"px")
       ).merge(config.resizerStyle))
 
     mouseupProc = proc (ev: Event) =
+      var diff = float(ev.clientY - resizerStartY)
+      var newHeight = height + diff
+      if newHeight < minHeight:
+        newHeight = minHeight
+      elif newHeight > maxHeight:
+        newHeight = maxHeight
+      resizer.dom.applyStyle(resizerStyle)
       mousemoveProc = nil
       mouseupProc = nil
-      var config = config
-      config.resizeRow(path=path, heightPx=height + float(ev.clientY - resizerStartY))
+      config.resizeRow(path=path, heightPx=newHeight)
       config.onupdate(config)
 
   proc onDropPlaceholderDragEnter(dropPlaceholderId: cstring): proc (ev: Event; n: VNode) =
@@ -482,7 +520,6 @@ proc renderRow(config: Config; path: RowPath): VNode =
   proc onDropPlaceholder(ev: Event; n: VNode) =
     if draggingPanel.isSome and dragOverId != nil:
       preventDefault(ev)
-      var config = config
       var dst: RowPath = path
       if dragOverId == bottomDropPlaceHolderId:
         dst = (
@@ -520,9 +557,13 @@ proc renderRow(config: Config; path: RowPath): VNode =
           )
       row.panels[row.activePanel].body
 
-proc renderColumn(config: Config; path: ColumnPath): VNode =
-  let column = getColumn(config=config, path=path)
-  let width = getColumnWidthPx(config=config, column=column)
+proc renderColumn(config; path: ColumnPath): VNode =
+  let column = config.getColumn(path)
+  let minWidth = float(config.getColumnMinWidthPx(column))
+  let maxWidth = float(config.getColumnMaxWidthPx(path))
+  var width = config.getColumnWidthPx(column)
+  if width < minWidth:
+    width = minWidth
   var resizer: VNode = nil
   let leftDropPlaceHolderId = cstring"karadock-column-" & &path & cstring"-drop-left"
   let rightDropPlaceHolderId = cstring"karadock-column-" & &path & cstring"-drop-right"
@@ -531,7 +572,7 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
     (StyleAttr.display, cstring"inline-block"),
     (StyleAttr.width, &width & "px"),
     (StyleAttr.position, cstring"relative"),
-    (StyleAttr.cssFloat, cstring"left")
+    (StyleAttr.verticalAlign, cstring"top")
   ).merge(config.columnStyle(config=config, path=path))
 
   let resizerStyle = style(
@@ -582,15 +623,27 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
     resizerStartX = ev.clientX;
 
     mousemoveProc = proc (ev: Event) =
+      var diff = float(ev.clientX - resizerStartX)
+      let newWidth = width + diff
+      if newWidth < minWidth:
+        diff = minWidth - width
+      elif newWidth > maxWidth:
+        diff = maxWidth - width
       resizer.dom.applyStyle(resizerStyle.merge(
-        style(StyleAttr.right, &(resizerStartX - ev.clientX) & cstring"px")
+        style(StyleAttr.right, &(-diff) & cstring"px")
       ).merge(config.resizerStyle))
 
     mouseupProc = proc (ev: Event) =
+      let diff = float(ev.clientX - resizerStartX)
+      var newWidth = width + diff
+      if newWidth < minWidth:
+        newWidth = minWidth
+      elif newWidth > maxWidth:
+        newWidth = maxWidth
+      resizer.dom.applyStyle(resizerStyle)
       mousemoveProc = nil
       mouseupProc = nil
-      var config = config
-      config.resizeColumn(path=path, widthPx=width + float(ev.clientX - resizerStartX))
+      config.resizeColumn(path=path, widthPx=newWidth)
       config.onupdate(config)
 
   proc onDropPlaceholderDragEnter(dropPlaceholderId: cstring): proc (ev: Event; n: VNode) =
@@ -606,7 +659,6 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
   proc onDropPlaceholder(ev: Event; n: VNode) =
     if draggingPanel.isSome and dragOverId != nil:
       preventDefault(ev)
-      var config = config
       var dst: ColumnPath = path
       if dragOverId == rightDropPlaceHolderId:
         dst = Natural(path + 1)
@@ -642,10 +694,12 @@ proc renderColumn(config: Config; path: ColumnPath): VNode =
         index: Natural(rowIndex)
       ))
 
-proc karaDock*(config: Config = initialConfig): VNode =
+proc karaDock*(config): VNode =
   let style = style(
     (StyleAttr.width, &config.width & cstring"px"),
     (StyleAttr.height, &config.height & cstring"px"),
+    (StyleAttr.whiteSpace, cstring"nowrap"),
+    (StyleAttr.overflow, cstring"auto")
   )
   result = buildHtml(tdiv(style=style)):
     for path in low(config.columns)..high(config.columns):

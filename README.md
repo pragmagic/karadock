@@ -1,92 +1,103 @@
 # KaraDock
 
-Dock layout engine based on Karax framework. Experimental. Available mostly as API reference so far.
+Dock layout engine based on Karax framework.
 
 Example:
 
 ```nim
-import vdom, vstyles, components, karax, karaxdsl, jdict, jstrutils
-import karadock
+const border = "4px solid black"
+const dropPlaceholderColor = "rgba(26, 135, 230, 0.5)"
+const bodyColor = "rgb(78, 79, 81)"
+const PanelAName = "Panel A"
+const PanelBName = "Panel B"
+const PanelCName = "Panel C"
+const PanelDName = "Panel D"
+const PanelEName = "Panel E"
 
-proc renderAccounts(): VNode {.component.} =
-  text "Some accounts"
+var config = Config(
+  columnStyle: proc(config; path: ColumnPath): VStyle =
+    style(borderLeft ~ (if path != 0: border else: "0")),
 
-proc renderStats(): VNode {.component.} =
-  text "Some stats and graphs"
+  columnDropPlaceholderStyle: proc(config; path: ColumnPath): VStyle =
+    style(backgroundColor ~ dropPlaceholderColor),
 
-proc renderAssets(): VNode {.component.} =
-  text "Some assets"
+  rowStyle: proc(config; path: RowPath): VStyle =
+    style(
+      borderTop ~ (if path.index != 0: border else: "0"),
+      backgroundColor ~ bodyColor
+    ),
 
-proc renderNewRecord(): VNode {.component.} =
-  text "New record"
+  rowHeaderStyle: proc(config; path: RowPath): VStyle =
+    style(backgroundColor ~ "black"),
 
-proc renderInfo(): VNode {.component.} =
-  text "New info"
+  rowDropPlaceholderStyle: proc(config; path: RowPath): VStyle =
+    style(backgroundColor ~ dropPlaceholderColor),
 
-Config(
-  width: 1024, # can be set by using window resize event
-  height: 768, # can be set by using window resize event
+  panelNameStyle: proc(config; path: PanelPath): VStyle =
+    let row = getRow(config=config, path=path.rowPath)
+    let isActive = row.activePanel == path.index
+    result = style(
+      height ~ "26px",
+      lineHeight ~ "26px",
+      paddingLeft ~ "15px",
+      paddingRight ~ "15px",
+      fontWeight ~ "500",
+      backgroundColor ~ (if isActive: bodyColor else: "black"),
+      color ~ (if isActive: "#c7c7c8" else: "#666666")
+    ),
 
-  columnStyle: style(
-    (StyleAttr.background, "gray"),
-    (StyleAttr.borderRight, "1px solid black")
-    (StyleAttr.padding, "5px")
-  ),
-  columnDropPlaceHolderStyle: style(
-    (StyleAttr.background, "blue"),
-    (StyleAttr.opacity, "0.3")
-  ),
+  panelNameDropPlaceholderStyle: proc(config; path: PanelPath): VStyle =
+    style(backgroundColor ~ dropPlaceholderColor),
 
-  rowStyle: style(
-    StyleAttr.marginBottom, "10px"
-  ),
-  rowHeaderStyle: VStyle(),
-  rowDropPlaceHolderStyle: style(
-    (StyleAttr.background, "blue"),
-    (StyleAttr.opacity, "0.3")
-  )
+  panelBodyStyle: proc(config; path: PanelPath): VStyle =
+    style(padding ~ "5px"),
 
-  panelNameStyle: style(
-    (StyleAttr.color, "white"),
-    (StyleAttr.fontSize, "12px"),
-    (StyleAttr.fontWeight, "bold"),
-    (StyleAttr.borderRight, "1px solid black")
-  ),
-  panelNameDropPlaceHolderStyle: style(
-    StyleAttr.border, "1px dashed white"
-  )
+  resizerStyle: style(backgroundColor ~ "rgba(255, 255, 255, 0.5)"),
 
-  onupdate: proc(config: Config) = redraw(),
+  onupdate: proc(configUpd: Config) =
+    #e.g. save configUpd.columns to LocalStorage
+    redraw(),
+
+  width: window.innerWidth,
+  height: window.innerHeight,
 
   columns: @[
     Column(
       width: 250,
       rows: @[
         Row(
-          height: 50,
+          height: 60,
           activePanel: 0,
           panels: @[
             Panel(
-              name: "Accounts",
+              name: PanelAName,
               isWorkingArea: false,
               forceDisplayName: true,
               minWidthPx: 250,
               minHeightPx: 200,
-              body: renderAccounts()
+              body: buildHtml(text PanelAName)
             )
           ]
         ),
         Row(
-          height: 50,
-          activePanel: 0,
+          height: 40,
+          activePanel: 1,
           panels: @[
             Panel(
-              name: "Stats",
+              name: PanelBName,
               isWorkingArea: false,
               forceDisplayName: true,
               minWidthPx: 250,
               minHeightPx: 200,
-              body: renderStats()
+              body: buildHtml(text PanelBName)
+            ),
+            Panel(
+              name: PanelCName,
+              isWorkingArea: false,
+              forceDisplayName: true,
+              minWidthPx: 250,
+              minHeightPx: 200,
+              body: buildHtml(text PanelCName)
             )
           ]
         )
@@ -101,12 +112,12 @@ Config(
           activePanel: 0,
           panels: @[
             Panel(
-              name: "Assets",
+              name: PanelDName,
               isWorkingArea: true,
               forceDisplayName: false,
               minWidthPx: 400,
               minHeightPx: 300,
-              body: renderAssets()
+              body: buildHtml(text PanelDName)
             )
           ]
         )
@@ -114,42 +125,57 @@ Config(
     ),
 
     Column(
-      width: 250,
+      width: 200,
       rows: @[
         Row(
           height: 100,
-          activePanel: 1,
+          activePanel: 0,
           panels: @[
             Panel(
-              name: "New Record",
+              name: PanelEName,
               isWorkingArea: false,
               forceDisplayName: true,
-              minWidthPx: 250,
-              minHeightPx: 200,
-              body: renderNewRecord()
-            ),
-            Panel(
-              name: "Info",
-              isWorkingArea: false,
-              forceDisplayName: true,
-              minWidthPx: 250,
-              minHeightPx: 200,
-              body: renderInfo()
+              minWidthPx: 200,
+              minHeightPx: 300,
+              body: buildHtml(text PanelEName)
             )
           ]
         )
       ]
-    ),
+    )
   ]
 )
 
-# config.getColumn, config.insertColumn, config.deleteColumn, config.resizeColumn
+window.addEventListener(cstring"resize", proc(event) =
+  config.width = window.innerWidth
+  config.height = window.innerHeight
+  redraw()
+)
 
-# config.getRow, config.insertRow, config.deleteRow, config.resizeRow
+proc createDom(): VNode =
+  let style = style(
+    color ~ "white",
+    fontSize ~ "16px"
+  )
 
-# config.getPanel, config.insertPanel, config.deletePanel, config.setActivePanel, config.movePanel
+  result = buildHtml(tdiv(style=style)):
+    karaDock(config)
 
-karaDock(config)
+setRenderer createDom
+```
+
+![Example](/example-complex.gif?raw=true "Example")
+
+To run the example above:
+
+```
+  nimble install # For first time
+```
+
+```
+  cd examples/
+  nim js complex.nim
+  open complex.html
 ```
 
 ## TODO

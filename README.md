@@ -186,6 +186,6 @@ To run the example above:
 
 ## License
 This library is licensed under the MIT license.
-Read [LICENSE](https://github.com/pragmagic/karadoc/blob/master/LICENSE) file for details.
+Read [LICENSE](https://github.com/pragmagic/karadock/blob/master/LICENSE) file for details.
 
 Copyright (c) 2017 Pragmagic, Inc.
